@@ -72,13 +72,15 @@ class SafetyZone:
 	def draw_status(
 		self,
 		frame: np.ndarray,
-		center: Optional[PixelPoint],
+		contact_points: list[PixelPoint],
 		inside_zone: bool,
+		contour_count: int,
+		candidate_count: int,
 	) -> None:
-		"""Draw status and rectangle-selection debug values on the frame."""
+		"""Draw safety status and concise edge-detector debug information."""
 		status = "DANGER" if inside_zone else "SAFE"
 		color = (0, 0, 255) if status == "DANGER" else (0, 180, 0)
-		cv2.rectangle(frame, (10, 10), (390, 145), (0, 0, 0), -1)
+		cv2.rectangle(frame, (10, 10), (520, 205), (0, 0, 0), -1)
 		cv2.putText(
 			frame,
 			status,
@@ -88,12 +90,19 @@ class SafetyZone:
 			color,
 			3,
 		)
-		center_text = "None" if center is None else f"({center[0]}, {center[1]})"
+		points_text = ", ".join(
+			f"({point[0]}, {point[1]})" for point in contact_points
+		)
+		if not points_text:
+			points_text = "None"
 		debug_lines = (
 			f"Zone: {'SELECTED' if self.selected else 'NOT SELECTED'}",
-			f"Hip center: {center_text}",
+			f"Contours: {contour_count}  Candidates: {candidate_count}",
+			f"Contact points: {points_text}",
 			f"Inside zone: {'YES' if inside_zone else 'NO'}",
 		)
+		if not contact_points:
+			debug_lines = ("NO CANDIDATE DETECTED",) + debug_lines
 		for index, line in enumerate(debug_lines):
 			cv2.putText(
 				frame,
