@@ -5,6 +5,7 @@ import cv2
 from config import EDGE_SHOW_DEBUG_VIEWS
 from safety.zone import SafetyZone
 from vision.edge_detector import EdgeCandidateDetector
+from vision.tracker import LightweightTracker
 
 
 WINDOW_TITLE = "Human Safety Zone Monitor"
@@ -20,7 +21,9 @@ def run_webcam(camera_index: int = 0) -> None:
 		return
 
 	detector = EdgeCandidateDetector()
+	tracker = LightweightTracker()
 	safety_zone = SafetyZone()
+	show_raw_boxes = False
 	cv2.namedWindow(WINDOW_TITLE)
 	cv2.setMouseCallback(WINDOW_TITLE, safety_zone.handle_mouse_event)
 	try:
@@ -32,21 +35,41 @@ def run_webcam(camera_index: int = 0) -> None:
 
 			frame = cv2.flip(frame, 1)
 			candidates = detector.detect(frame)
-			contact_points = []
-			for candidate in candidates:
-				detector.draw_candidate(frame, candidate)
-				contact_point = detector.contact_point(candidate)
-				contact_points.append(contact_point)
+			confirmed_tracks = tracker.update(candidates)
+
+			# Optionally draw raw detected candidate boxes for debugging
+			if show_raw_boxes:
+				for raw_box in detector.raw_candidates:
+					detector.draw_candidate(
+						frame,
+						raw_box,
+						label="Raw",
+						color=(180, 180, 180),
+						thickness=1,
+					)
+
+			# Draw confirmed tracked candidate boxes and contact points
+			for track in confirmed_tracks:
+				track_color = (0, 0, 255) if track.in_danger else (0, 255, 255)
+				status_label = f"ID #{track.track_id} [age:{track.age}]"
+				detector.draw_candidate(
+					frame,
+					track.box,
+					label=status_label,
+					color=track_color,
+					thickness=2,
+				)
+				contact_point = track.contact_point
 				cv2.circle(frame, contact_point, 5, (255, 0, 255), -1)
-			inside_zone = any(safety_zone.contains_point(point) for point in contact_points)
+
 			safety_zone.draw(frame)
 			safety_zone.draw_status(
 				frame,
-				contact_points,
-				inside_zone,
+				tracker.active_tracks,
 				detector.contour_count,
-				detector.candidate_count,
+				detector.raw_candidate_count,
 			)
+
 			if EDGE_SHOW_DEBUG_VIEWS:
 				for debug_name, debug_image in detector.debug_images.items():
 					cv2.imshow(debug_name, debug_image)
@@ -57,6 +80,9 @@ def run_webcam(camera_index: int = 0) -> None:
 				break
 			if key == ord("r"):
 				safety_zone.reset()
+				tracker.reset()
+			elif key == ord("d"):
+				show_raw_boxes = not show_raw_boxes
 			elif key in (10, 13):
 				safety_zone.confirm()
 	finally:
